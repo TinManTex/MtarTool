@@ -2,7 +2,9 @@
 using MtarTool.Core.Mtar;
 using MtarTool.Core.Utility;
 using System;
+using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Text;
 using System.Xml.Serialization;
 
@@ -18,25 +20,45 @@ namespace MtarTool
             if(args.Length != 0)
             {
                 string path = Path.GetFullPath(args[0]);
-
+                bool outputHashes = false;
                 if(args.Length > 1)
                 {
                     if(args[1] == "-n")
                     {
                         numberNames = true;
                     } //if ends
+
+                    if(args[1].ToLower()=="-outputhashes" || args[1].ToLower() == "-o") {
+                        outputHashes = true;
+                    }
                 } //if ends
 
                 if(Path.GetExtension(path) == ".mtar")
                 {
+                    HashSet<string> uniquePathHashes = new HashSet<string>();
                     if(GetMtarType(path) == 1)
                     {
-                        ReadArchive<MtarFile>(path);
+                        MtarFile mtarfile = ReadArchive<MtarFile>(path, outputHashes);
+                        foreach (MtarGaniFile entry in mtarfile.files) {
+                            ulong pathHash = entry.hash & 0x3FFFFFFFFFFFF;//tex TODO is this right for GZ?
+                            uniquePathHashes.Add(pathHash.ToString("x"));
+                        }
                     } //if ends
                     else
                     {
-                        ReadArchive<MtarFile2>(path);
+                        MtarFile2 mtarfile = ReadArchive<MtarFile2>(path, outputHashes);
+                        foreach (MtarGaniFile2 entry in mtarfile.files) {
+                            ulong pathHash = entry.hash & 0x3FFFFFFFFFFFF;//tex TODO is this right for GZ?
+                            uniquePathHashes.Add(pathHash.ToString("x"));
+                        }
                     } //else ends
+                    if (outputHashes) {
+                        List<string> pathHashes = uniquePathHashes.ToList<string>();
+                        pathHashes.Sort();
+                        string fileDirectory = Path.GetDirectoryName(path);
+                        string pathHashesOutputPath = Path.Combine(fileDirectory, string.Format("{0}_pathHashes.txt", Path.GetFileName(path)));
+                        File.WriteAllLines(pathHashesOutputPath, pathHashes.ToArray<string>());
+                    }
                 } //if ends
                 else if(Path.GetExtension(path) == ".xml")
                 {
@@ -63,7 +85,7 @@ namespace MtarTool
             } //using ends
         } //method GetMtarType ends
 
-        static void ReadArchive<T>(string path) where T : ArchiveFile, new()
+        static T ReadArchive<T>(string path, bool skipWrite = false) where T : ArchiveFile, new()
         {
             string directory = Path.GetDirectoryName(path);
             string nameWithoutExtension = Path.GetFileNameWithoutExtension(path);
@@ -80,12 +102,15 @@ namespace MtarTool
 
                 file.name = Path.GetFileName(path);
                 file.Read(input);
+                if (skipWrite == false) 
+                {
                 file.Export(input, outputPath);
-
+                    NameResolver.WriteOutputList();
+                }
                 xmlSerializer.Serialize(xmlOutput, file);
-            } //using ends
 
-            NameResolver.WriteOutputList();
+                return file;
+            } //using ends
         } //method ReadArchive ends
 
         static void WriteArchive(string path)
